@@ -103,11 +103,11 @@ def plot_matrix_and_vector_with_shared_colorbar(A, B):
 # Main processing
 def main():
     # Load data
-    csv_files = ["U.csv"]
+    csv_files = ["U.csv"] # <- Please change it for your preffer csv_file
     data = load_csv_data(csv_files)
     data = data[0]  # since load_csv_data returns a list of arrays
 
-    # Debugging output
+    # For debug
     # print(f"Loaded data length: {len(data)}")
     # print(f"Data sample: {data[:10]}")
 
@@ -123,7 +123,7 @@ def main():
 
     # Perform SVD
     U, S, Vt = truncated_svd(hankel2, r)
-    print("Vt shape", Vt.shape)  # <- for debug
+    # print("Vt shape", Vt.shape)  # <- for debug
 
     # Time-shifted matrices
     V_1 = Vt[:, :-1].T
