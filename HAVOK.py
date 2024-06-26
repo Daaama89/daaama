@@ -146,20 +146,28 @@ def main():
     # print("tspan and y", len(tspan), y.shape) <- for debug
 
     fig, axs = plt.subplots(y.shape[1], 1, sharex=True, figsize=(7, 9))
-    for i in range(y.shape[1]):
-        axs[i].plot(
-            t[50000:75000],
-            V[50000:75000, i],
-            "k",
-            label="eigen-time-delay-coordinate",
-        )
-        axs[i].plot(
-            t[50000:75000], y[50000:75000, i], "r--", label="HAVOK regression model"
-        )
-        axs[i].legend()
-        axs[i].set(xlabel="t", ylabel=r"$v_{}$".format(i + 1))
+　　　　n_plots = y.shape[1]
+　　　　plots_per_fig = 4
 
-    fig.show()
+　　　for start_idx in range(0, n_plots, plots_per_fig):
+    　　　　end_idx = min(start_idx + plots_per_fig, n_plots)
+    　　　　fig, axs = plt.subplots(end_idx - start_idx, 1, sharex=True, figsize=(7, 9))
+    　　　　for i in range(start_idx, end_idx):
+       　　　　 ax = axs[i - start_idx]
+       　　　　 ax.plot(
+           　　　　 t[50000:75000],
+          　　　　  V[50000:75000, i],
+            　　　　"k",
+           　　　　 label="eigen-time-delay-coordinate",
+       　　　　　　　　 )
+       　　　　　 ax.plot(
+            　　　　t[50000:75000], y[50000:75000, i], "r--", label="HAVOK regression model"
+       　　　　　　　　 )
+      　 　　　　ax.legend()
+       　　　　 ax.set(xlabel="t", ylabel=r"$v_{}$".format(i + 1))
+    　　　　　　plt.tight_layout()
+    　plt.show()
+
     # please change t_span, V_span, and HAVOK_model_span
 
 
