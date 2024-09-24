@@ -101,36 +101,8 @@ def plot_matrix_and_vector_with_shared_colorbar(A, B):
     plt.show()
 
 
-# Main processing
-def main():
-    # Load data
-    csv_files = ["duffing_x.csv", "dp_x1.csv", "lorenz_x.csv"]
-    data = load_csv_data(csv_files)
-
-    # Duffing System
-    run_havok_analysis_duffing(
-        data[0], m=55, r=8, dt=0.001, label="Duffing", threshold=0.005, timewindow=1.0
-    )
-
-    # Double Pendulum System
-    run_havok_analysis_double_pendulum(
-        data[1],
-        m=100,
-        r=5,
-        dt=0.001,
-        label="Double Pendulum",
-        threshold=0.005,
-        timewindow=1.0,
-    )
-
-    # Lorenz System
-    run_havok_analysis(
-        data[2], m=100, r=11, dt=0.001, label="Lorenz", threshold=0.002, timewindow=1.0
-    )
-
-
 # run HAVOK lorenz and so onn
-def run_havok_analysis(data, m, r, dt, label, threshold, timewindow):
+def run_havok_analysis(data, m, r, dt, label):
     # Create Hankel matrix
     hankel_matrix = create_hankel_matrix(data, m)
 
@@ -158,8 +130,7 @@ def run_havok_analysis(data, m, r, dt, label, threshold, timewindow):
     )
 
     # Plot results
-    plot_results(V, y, dt, r, label)
-    plot_embedding(V, label)
+    plot_embedding(V, label, dt)
     plot_attractor_forcing_active(V, r, dt)
     plot_time_series_forcing_active(V, dt, r)
 
@@ -194,25 +165,24 @@ def plot_results(V, y, dt, r, label):
         plt.show()
 
 
-def plot_embedding(V, label):
+def plot_embedding(V, label, dt):
+
+    t_length = np.arange(0, len(V) // 5 * dt, dt)
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111, projection="3d")
-    ax.plot(V[500000:550000, 0], V[500000:550000, 1], V[500000:550000, 2], "k")
+    ax.plot(V[: len(t_length), 0], V[: len(t_length), 1], V[: len(t_length), 2], "k")
     ax.set_xlabel("v1")
     ax.set_ylabel("v2")
     ax.set_zlabel("v3")
-    ax.set_xticks([0])
-    ax.set_yticks([0])
-    ax.set_zticks([0])
-    ax.set_title(f"{label} Time-delay embedded attractor")
+    ax.view_init(elev=35, azim=45)
+    plt.tight_layout()
     plt.show()
 
 
 def plot_attractor_forcing_active(V, r, dt):
     L = np.arange(len(V))
-    inds = V[L, r - 1] ** 2 > 4.0e-6
+    inds = V[L, r - 1] ** 2 > 1.0e-6
     L = L[inds]
-    t = np.arange(0, len(V) * dt, dt)
 
     startvals = []
     endvals = []
@@ -287,6 +257,7 @@ def plot_attractor_forcing_active(V, r, dt):
 
     plt.tight_layout()
     fig.set_size_inches(10, 10)
+    ax.view_init(elev=0, azim=150)
     plt.show()
 
 
@@ -294,7 +265,7 @@ def plot_time_series_forcing_active(V, dt, r):
     fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(7, 9))
     tspan = np.arange(0, len(V) * dt, dt)
     L = np.arange(len(V))
-    inds = V[L, r - 1] ** 2 > 4.0e-6
+    inds = V[L, r - 1] ** 2 > 1.0e-6
     L = L[inds]
 
     startvals = []
@@ -425,6 +396,7 @@ def plot_time_series_forcing_active(V, dt, r):
 
     ax3.set_xlabel("t")
     ax3.set_ylabel(f"v_{r}^2")
+    ax3.set_ylim([0, 0.00025])
 
     # 共通の設定
     ax3.legend(["Forcing Active", "Forcing Inactive"])
@@ -436,7 +408,7 @@ def plot_time_series_forcing_active(V, dt, r):
     plt.show()
 
 
-def run_havok_analysis_double_pendulum(data, m, r, dt, label, threshold, timewindow):
+def run_havok_analysis_double_pendulum(data, m, r, dt, label):
     # Create Hankel matrix
     hankel_matrix = create_hankel_matrix(data, m)
 
@@ -464,83 +436,70 @@ def run_havok_analysis_double_pendulum(data, m, r, dt, label, threshold, timewin
     )
 
     # Plot results
-    plot_results(V, y, dt, r, label)
-    plot_embedding(V, label)
+    plot_embedding(V, label, dt)
     plot_attractor_forcing_active_double_pendulum(V, r, dt)
     plot_time_series_forcing_active_double_pendulum(V, dt, r)
 
+    np.savetxt("dp_V1.csv", V[:, 0], delimiter=",", fmt="%.18f")
+    np.savetxt("dp_V2.csv", V[:, 1], delimiter=",", fmt="%.18f")
+    np.savetxt("dp_V3.csv", V[:, 2], delimiter=",", fmt="%.18f")
+
 
 def plot_attractor_forcing_active_double_pendulum(V, r, dt):
-    L = np.arange(len(V))
-    inds = V[L, r - 1] ** 2 > 1.325e-7
-    L = L[inds]
-    t = np.arange(0, len(V) * dt, dt)
+    # 信号
+    L = np.arange(0, len(V) // 5)
+    signal = V[L, r - 1] ** 2
 
-    startvals = []
-    endvals = []
-    start = 0
-    numhits = 100
+    # 閾値を使った検出 (find_peaks の代わりに直接判定)
+    threshold = 1.0e-5
+    above_threshold = signal > threshold  # 閾値を超える部分はTrue
 
-    for k in range(numhits):
-        startvals.append(start)
-        endmax = start + 500
-        interval = np.arange(start, endmax)
-        hits = np.where(inds[interval])[0]
+    # 閾値以下の部分も補完するためのロジック
+    # 信号全体で閾値を超えた範囲を探し、その前後を補完
+    extended_startvals = []
+    extended_endvals = []
 
-        if hits.size > 0:
-            endval = start + hits[-1]
-            endvals.append(endval)
-            newhit = np.where(inds[endval + 1 :])[0]
+    # 閾値を超えた部分の開始と終了を取得
+    startvals = np.where(np.diff(above_threshold.astype(int)) == 1)[0] + 1
+    endvals = np.where(np.diff(above_threshold.astype(int)) == -1)[0] + 1
 
-            if newhit.size > 0:
-                start = endval + newhit[0]
-            else:
-                print("新しいヒットが見つかりませんでした。ループを終了します。")
-        else:
-            print("ヒットが見つかりませんでした。ループを終了します。")
+    # ピーク前後の部分も赤く表示するために、少し範囲を広げる
+    extend_range = 20  # 20点分前後を拡張
+    for start, end in zip(startvals, endvals):
+        extended_startvals.append(max(0, start - extend_range))  # 開始点を拡張
+        extended_endvals.append(
+            min(len(signal) - 1, end + extend_range)
+        )  # 終了点を拡張
+    np.savetxt("extended_startvals_dp.csv", extended_startvals, delimiter=",", fmt="%d")
+    np.savetxt("extended_endvals_dp.csv", extended_endvals, delimiter=",", fmt="%d")
 
-    print("startvals, endvals = :", len(startvals), len(endvals))
-
-    # プロット
+    # 3Dプロット
     fig = plt.figure()
     ax = fig.add_subplot(111, projection="3d")
 
-    # プロット前にサイズを確認
-    assert len(startvals) == len(
-        endvals
-    ), "startvals と endvals のサイズが一致しません。"
-
-    for k in range(numhits):
-        if k < len(startvals) and k < len(endvals):
-            print(f"k = {k+1}, startval = {startvals[k]}, endval = {endvals[k]}")
-            if startvals[k] < len(V) and endvals[k] < len(V):
-                ax.plot(
-                    V[startvals[k] : endvals[k], 0],
-                    V[startvals[k] : endvals[k], 1],
-                    V[startvals[k] : endvals[k], 2],
-                    "r",
-                    linewidth=1.5,
-                )
-            else:
-                print("エラー: インデックスが範囲外です。")
+    for k in range(len(startvals)):
+        if extended_startvals[k] < len(V) and extended_endvals[k] < len(V):
+            ax.plot(
+                V[extended_startvals[k] : extended_endvals[k], 0],
+                V[extended_startvals[k] : extended_endvals[k], 1],
+                V[extended_startvals[k] : extended_endvals[k], 2],
+                "r",
+                linewidth=1.5,
+            )
         else:
-            print("エラー: 配列のサイズが不足しています。")
+            print("エラー: インデックスが範囲外です。")
 
-    for k in range(numhits - 1):
-        if k < len(endvals) and k + 1 < len(startvals):
-            print(f"k = {k+1}, endval = {endvals[k]}, startval = {startvals[k+1]}")
-            if endvals[k] < len(V) and startvals[k + 1] < len(V):
-                ax.plot(
-                    V[endvals[k] : startvals[k + 1], 0],
-                    V[endvals[k] : startvals[k + 1], 1],
-                    V[endvals[k] : startvals[k + 1], 2],
-                    color=[0.25, 0.25, 0.25],
-                    linewidth=1.5,
-                )
-            else:
-                print("エラー: インデックスが範囲外です。")
+    for k in range(len(extended_startvals) - 1):
+        if extended_endvals[k] < len(V) and extended_startvals[k + 1] < len(V):
+            ax.plot(
+                V[extended_endvals[k] : extended_startvals[k + 1], 0],
+                V[extended_endvals[k] : extended_startvals[k + 1], 1],
+                V[extended_endvals[k] : extended_startvals[k + 1], 2],
+                color=[0.25, 0.25, 0.25],
+                linewidth=1.5,
+            )
         else:
-            print("エラー: 配列のサイズが不足しています。")
+            print("エラー: インデックスが範囲外です。")
 
     # プロットのその他の設定
     ax.set_xlabel("v_1")
@@ -549,156 +508,72 @@ def plot_attractor_forcing_active_double_pendulum(V, r, dt):
 
     plt.tight_layout()
     fig.set_size_inches(10, 10)
+    ax.view_init(elev=35, azim=45)
     plt.show()
 
 
 def plot_time_series_forcing_active_double_pendulum(V, dt, r):
     fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(7, 9))
     tspan = np.arange(0, len(V) * dt, dt)
-    L = np.arange(len(V))
-    inds = V[L, r - 1] ** 2 > 1.325e-7
-    L = L[inds]
 
-    startvals = []
-    endvals = []
-    start = 0
-    numhits = 100
+    # 信号
+    L = np.arange(0, len(V))
+    signal = V[L, r - 1] ** 2
 
-    for k in range(numhits):
-        startvals.append(start)
-        endmax = start + 500
-        interval = np.arange(start, endmax)
-        hits = np.where(inds[interval])[0]
+    # 閾値を使った検出 (find_peaks の代わりに直接判定)
+    threshold = 1.0e-5
+    above_threshold = signal > threshold  # 閾値を超える部分はTrue
 
-        if hits.size > 0:
-            endval = start + hits[-1]
-            endvals.append(endval)
-            newhit = np.where(inds[endval + 1 :])[0]
+    # 閾値以下の部分も補完するためのロジック
+    # 信号全体で閾値を超えた範囲を探し、その前後を補完
+    extended_startvals = []
+    extended_endvals = []
 
-            if newhit.size > 0:
-                start = endval + newhit[0]
-            else:
-                print("新しいヒットが見つかりませんでした。ループを終了します。")
-        else:
-            print("ヒットが見つかりませんでした。ループを終了します。")
+    # 閾値を超えた部分の開始と終了を取得
+    startvals = np.where(np.diff(above_threshold.astype(int)) == 1)[0] + 1
+    endvals = np.where(np.diff(above_threshold.astype(int)) == -1)[0] + 1
+
+    # ピーク前後の部分も赤く表示するために、少し範囲を広げる
+    extend_range = 20  # 20点分前後を拡張
+    for start, end in zip(startvals, endvals):
+        extended_startvals.append(max(0, start - extend_range))  # 開始点を拡張
+        extended_endvals.append(
+            min(len(signal) - 1, end + extend_range)
+        )  # 終了点を拡張
+
+    # グラフ描画
 
     # サブプロット1: v_1 の時系列データ
     ax1.plot(tspan[: len(V)], V[:, 0], "k")
-    for k in range(numhits):
-        if k < len(endvals) and k + 1 < len(startvals):
-            print(f"k = {k+1}, endval = {endvals[k]}, startval = {startvals[k+1]}")
-            if endvals[k] < len(V) and startvals[k + 1] < len(V):
-                ax1.plot(
-                    tspan[startvals[k] : endvals[k]],
-                    V[startvals[k] : endvals[k], 0],
-                    "r",
-                    linewidth=1.5,
-                )
-            else:
-                print("エラー：インデックスが範囲外")
-        else:
-            print("エラー：配列のサイズが不足")
-
-    for k in range(numhits - 1):
-        if k < len(endvals) and k + 1 < len(startvals):
-            print(f"k = {k+1}, endval = {endvals[k]}, startval = {startvals[k+1]}")
-            if endvals[k] < len(V) and startvals[k + 1] < len(V):
-                ax1.plot(
-                    tspan[endvals[k] : startvals[k + 1]],
-                    V[endvals[k] : startvals[k + 1], 0],
-                    color=[0.25, 0.25, 0.25],
-                    linewidth=1.5,
-                )
-            else:
-                print("エラー：インデックスが範囲外")
-        else:
-            print("エラー：配列のサイズが不足")
-
-    ax1.set_xlim([-35, 153])
-    ax1.set_ylim([-0.0047, 0.0027])
+    for start, end in zip(extended_startvals, extended_endvals):
+        ax1.plot(tspan[start:end], V[start:end, 0], "r", linewidth=1.5)
+    ax1.set_ylim([-0.0015, 0.0015])
     ax1.set_ylabel("v_1")
 
     # サブプロット2: v_{r} の時系列データ
     ax2.plot(tspan[: len(V)], V[:, r - 1], "k")
-    for k in range(numhits):
-        if k < len(endvals) and k + 1 < len(startvals):
-            print(f"k = {k+1}, endval = {endvals[k]}, startval = {startvals[k+1]}")
-            if endvals[k] < len(V) and startvals[k + 1] < len(V):
-                ax2.plot(
-                    tspan[startvals[k] : endvals[k]],
-                    V[startvals[k] : endvals[k], r - 1],
-                    "r",
-                    linewidth=1.5,
-                )
-            else:
-                print("エラー：インデックスが範囲外")
-        else:
-            print("エラー：配列のサイズが不足")
-
-    for k in range(numhits - 1):
-        if k < len(endvals) and k + 1 < len(startvals):
-            print(f"k = {k+1}, endval = {endvals[k]}, startval = {startvals[k+1]}")
-            if endvals[k] < len(V) and startvals[k + 1] < len(V):
-                ax2.plot(
-                    tspan[endvals[k] : startvals[k + 1]],
-                    V[endvals[k] : startvals[k + 1], r - 1],
-                    color=[0.25, 0.25, 0.25],
-                    linewidth=1.5,
-                )
-            else:
-                print("エラー：インデックスが範囲外")
-        else:
-            print("エラー：配列のサイズが不足")
-
+    for start, end in zip(extended_startvals, extended_endvals):
+        ax2.plot(tspan[start:end], V[start:end, r - 1], "r", linewidth=1.5)
     ax2.set_ylabel(f"v_{r}")
+    ax2.set_ylim([-0.008, 0.008])
 
-    # サブプロット3: v_{15}^2 の時系列データ
-    ax3.plot(tspan[startvals[0]], V[startvals[0], r - 1], "r")
-    ax3.plot(tspan[endvals[0]], V[startvals[1], r - 1], color=[0.25, 0.25, 0.25])
-    for k in range(numhits):
-        if k < len(endvals) and k + 1 < len(startvals):
-            print(f"k = {k+1}, endval = {endvals[k]}, startval = {startvals[k+1]}")
-            if endvals[k] < len(V) and startvals[k + 1] < len(V):
-                ax3.plot(
-                    tspan[startvals[k] : endvals[k]],
-                    V[startvals[k] : endvals[k], r - 1] ** 2,
-                    "r",
-                    linewidth=1.5,
-                )
-            else:
-                print("エラー：インデックスが範囲外")
-        else:
-            print("エラー：配列のサイズが不足")
-
-    for k in range(numhits - 1):
-        if k < len(endvals) and k + 1 < len(startvals):
-            print(f"k = {k+1}, endval = {endvals[k]}, startval = {startvals[k+1]}")
-            if endvals[k] < len(V) and startvals[k + 1] < len(V):
-                ax3.plot(
-                    tspan[endvals[k] : startvals[k + 1]],
-                    V[endvals[k] : startvals[k + 1], r - 1] ** 2,
-                    color=[0.25, 0.25, 0.25],
-                    linewidth=1.5,
-                )
-            else:
-                print("エラー：インデックスが範囲外")
-        else:
-            print("エラー：配列のサイズが不足")
-
+    # サブプロット3: v_{r}^2 の時系列データ
+    ax3.plot(tspan[: len(V)], signal, "k")
+    for start, end in zip(extended_startvals, extended_endvals):
+        ax3.plot(tspan[start:end], signal[start:end], "r", linewidth=1.5)
     ax3.set_xlabel("t")
+    ax3.set_ylim([0, 7e-5])
     ax3.set_ylabel(f"v_{r}^2")
 
-    # 共通の設定
-    ax3.legend(["Forcing Active", "Forcing Inactive"])
+    # 共通の x 軸を設定
     ax1.get_shared_x_axes().join(ax1, ax2, ax3)
-    ax1.set_xlim([25, 65])
+    ax1.set_xlim([20, 65])
 
-    # グラフのサイズや出力設定
     fig.tight_layout()
     plt.show()
 
 
-def run_havok_analysis_duffing(data, m, r, dt, label, threshold, timewindow):
+def run_havok_analysis_duffing(data, m, r, dt, label):
     # Create Hankel matrix
     hankel_matrix = create_hankel_matrix(data, m)
 
@@ -726,33 +601,38 @@ def run_havok_analysis_duffing(data, m, r, dt, label, threshold, timewindow):
     )
 
     # Plot results
-    plot_results(V, y, dt, r, label)
-    plot_embedding(V, label)
     plot_attractor_forcing_active_duffing(V, r, dt)
     plot_time_series_forcing_active_duffing(V, dt, r)
 
 
 def plot_attractor_forcing_active_duffing(V, r, dt):
-    L = np.arange(len(V))
-    inds = V[L, r - 1] ** 2 > 5.0e-6
+    L = np.arange(0, len(V) // 2 - 1)
+    inds = V[L, r - 1] ** 2 > 1.0e-6
     L = L[inds]
-    t = np.arange(0, len(V) * dt, dt)
 
     startvals = []
     endvals = []
-    start = 0
-    numhits = 100
+    start = 100
+    numhits = 500
 
     for k in range(numhits):
         startvals.append(start)
-        endmax = start + 500
+        endmax = start + 100
         interval = np.arange(start, endmax)
         hits = np.where(inds[interval])[0]
+        if start >= len(inds):
+            print(f"エラー: start ({start}) が inds の範囲外です。")
+        if endmax >= len(inds):
+            print(f"エラー: endmax ({endmax}) が inds の範囲外です。")
 
         if hits.size > 0:
             endval = start + hits[-1]
             endvals.append(endval)
             newhit = np.where(inds[endval + 1 :])[0]
+            if newhit.size == 0:
+                print(
+                    f"newhit が見つかりませんでした。endval = {endval}, start を更新できません。"
+                )
 
             if newhit.size > 0:
                 start = endval + newhit[0]
@@ -811,24 +691,25 @@ def plot_attractor_forcing_active_duffing(V, r, dt):
 
     plt.tight_layout()
     fig.set_size_inches(10, 10)
+    ax.view_init(elev=20, azim=120)
     plt.show()
 
 
 def plot_time_series_forcing_active_duffing(V, dt, r):
     fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(7, 9))
     tspan = np.arange(0, len(V) * dt, dt)
-    L = np.arange(len(V))
-    inds = V[L, r - 1] ** 2 > 5.0e-6
+    L = np.arange(0, len(V) // 2 - 1)
+    inds = V[L, r - 1] ** 2 > 1.0e-6
     L = L[inds]
 
     startvals = []
     endvals = []
-    start = 0
-    numhits = 100
+    start = 100
+    numhits = 500
 
     for k in range(numhits):
         startvals.append(start)
-        endmax = start + 500
+        endmax = start + 100
         interval = np.arange(start, endmax)
         hits = np.where(inds[interval])[0]
 
@@ -876,8 +757,7 @@ def plot_time_series_forcing_active_duffing(V, dt, r):
         else:
             print("エラー：配列のサイズが不足")
 
-    ax1.set_xlim([-35, 153])
-    ax1.set_ylim([-0.0047, 0.0027])
+    ax1.set_ylim([-0.0015, 0.0015])
     ax1.set_ylabel("v_1")
 
     # サブプロット2: v_{r} の時系列データ
@@ -948,16 +828,37 @@ def plot_time_series_forcing_active_duffing(V, dt, r):
             print("エラー：配列のサイズが不足")
 
     ax3.set_xlabel("t")
+    ax3.set_ylim([-0.000001, 0.00001])
     ax3.set_ylabel(f"v_{r}^2")
 
     # 共通の設定
     ax3.legend(["Forcing Active", "Forcing Inactive"])
     ax1.get_shared_x_axes().join(ax1, ax2, ax3)
-    ax1.set_xlim([25, 125])
+    ax1.set_xlim([500, 800])
 
     # グラフのサイズや出力設定
     fig.tight_layout()
     plt.show()
+
+
+# Main processing
+def main():
+    # Load data
+    csv_files = ["duffing_x.csv", "dp_x1.csv", "lorenz_x.csv"]
+    data = load_csv_data(csv_files)
+
+    # Duffing System
+    run_havok_analysis_duffing(
+        data[0], m=50, r=8, dt=2.0 * np.pi / 100, label="Duffing"
+    )
+
+    # Double Pendulum System
+    run_havok_analysis_double_pendulum(
+        data[1], m=100, r=5, dt=0.001, label="Double Pendulum"
+    )
+
+    # Lorenz System
+    run_havok_analysis(data[2], m=100, r=11, dt=0.001, label="Lorenz")
 
 
 if __name__ == "__main__":
