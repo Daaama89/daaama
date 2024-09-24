@@ -7,8 +7,7 @@ def f(var, t, alpha, beta, delta, gamma, omega, phi):
     ''' Duffing oscillator '''
 
     v = var[1]
-    a = - alpha * var[0] - beta * var[0] ** 3 - delta * var[1],
-    + gamma * np.cos(omega * t + phi)
+    a = - alpha * var[0] - beta * var[0] ** 3 - delta * var[1] + gamma * np.cos(omega * t + phi)
 
     return np.array([v, a])
 
@@ -69,13 +68,14 @@ if __name__ == '__main__':
     # ダフィング振動子のパラメータ
     alpha = -1.0
     beta = 1.0
-    delta = 0.2
-    gamma = 0.3
+    delta = 0.4
+    gamma = 0.4
     omega = 1.0
     phi = 0
 
     # 解析時間
-    t = np.arange(0, 10000, (2 * np.pi) / omega)
+    dt = 2*np.pi / 100
+    t = np.arange(0, 100000, dt)
 
     # 初期条件
     var = [0.0, 0.0]
@@ -86,3 +86,20 @@ if __name__ == '__main__':
 
     # プロット
     plot(t, x, v)
+
+    # Display the time series data of x
+    plt.figure(figsize=(10, 5))
+    plt.plot(t[:250000], x[:250000], label='Displacement', color='blue')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Displacement (m)')
+    plt.title('Time Series of Displacement x')
+    plt.grid(True)
+    plt.show()
+    plt.close()
+
+    data1 = x
+    data2 = v
+    data3 = x[: int(500/dt)]
+    np.savetxt("duffing_x.csv", data1, delimiter=",", fmt="%.18f")
+    np.savetxt("duffing_v.csv", data2, delimiter=",", fmt="%.18f")
+    np.savetxt("duffing_x_train.csv", data3, delimiter=",", fmt="%.18f")
