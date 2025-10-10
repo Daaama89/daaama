@@ -137,23 +137,44 @@ def plot_timeseries_HAVOK_with_slices_save(
     あなたの関数と同じ見た目/ロジックで、各セグメントを PNG 保存します。
     保存名: timeseries_segment_{k}.png
     """
-    v1_original = data_original[0, :]
-    v1 = data_pred[:, 0]
-    vr = u[0].flatten()
+    N = min(
+        len(t),
+        int(data_pred.shape[0]),
+        int(data_original.shape[1]),
+        int(u.shape[1]),
+    )
+    t = np.asarray(t).reshape(-1)[:N]
+    v1_original = np.asarray(data_original[0, :N])
+    v1 = np.asarray(data_pred[:N, 0])
+    vr = np.asarray(u[0, :N]).reshape(-1)
     vr2 = vr**2
     vr_min, vr_max = np.min(vr), np.max(vr)
 
     # 活性化インデックス → 連続スライス
     active_indices = np.where(np.abs(vr) > threshold)[0]
-    active_slices = get_active_slices(active_indices, min_jump_dist)
+    if active_indices.size > 0:
+        diffs = np.diff(active_indices)
+        split_indices = np.where(diffs > min_jump_dist)[0]
+        starts = [active_indices[0]] + [active_indices[i + 1] for i in split_indices]
+        ends = [active_indices[i] for i in split_indices] + [active_indices[-1]]
+        active_slices = list(zip(starts, ends))
+    else:
+        active_slices = []
 
     # ローブスイッチ（符号変化点）
     lobe_switch_indices = np.where(np.diff(np.sign(v1)) != 0)[0] + 1
 
     t_min, t_max = float(t[0]), float(t[-1])
+
     if segment_width is None or segment_width <= 0:
-        segment_width = t_max - t_min
-    segment_edges = np.arange(t_min, t_max + segment_width, segment_width)
+        segment_edges = np.array([t_min, t_max], dtype=float)
+    else:
+        n_seg = max(1, int(np.ceil((t_max - t_min) / segment_width)))
+        segment_edges = np.linspace(t_min, t_max, n_seg + 1)
+
+    vr_min, vr_max = float(np.min(vr)), float(np.max(vr))
+    if vr_min == vr_max:
+        vr_min, vr_max = (vr_min - 1.0,)
 
     for k in range(len(segment_edges) - 1):
         t_start = segment_edges[k]
@@ -344,7 +365,7 @@ def main():
     p.add_argument(
         "--time_model",
         type=str,
-        default="discrete",
+        default="continuous",
         choices=["continuous", "discrete"],
     )
     # （連続時間用のオプション。離散では無視されます）
@@ -427,14 +448,15 @@ def main():
     #     horizon=args.horizon,
     #     num_chaos=args.num_chaos,
     #     dt=args.dt,
-    #     time_model=args.time_model,  # ★ 追加
-    #     diff_method=args.diff_method,  # ★ 追加（連続のみ使用）
-    #     savgol_window=args.savgol_window,  # ★ 追加
-    #     savgol_poly=args.savgol_poly,  # ★ 追加
-    #     ridge=args.ridge,  # ★ 追加（連続/離散どちらでも使用）
-    #     stabilize=args.stabilize,  # ★ 追加（連続のみ使用）
-    #     stabilize_eps=args.stabilize_eps,  # ★ 追加
+    #     time_model=args.time_model,
+    #     ridge=args.ridge,
     # )
+    # vcfg.diff_method = getattr(args, "diff_method", "savgol")
+    # vcfg.savgol_window = getattr(args, "savgol_window", 11)
+    # vcfg.savgol_poly = getattr(args, "savgol_poly", 3)
+    # vcfg.stabilize = getattr(args, "stabilize", True)
+    # vcfg.stabilize_eps = getattr(args, "stabilize_eps", 1e-6)
+    # vcfg.train_frac = getattr(args, "train_frac", 0.8)
 
     # HAVOK on latent (discreate-time)
     vcfg = HavokConfig(
@@ -450,12 +472,52 @@ def main():
 
     analyzer = HavokLatentAnalyzer(vcfg)
     res = analyzer.analyze(model, H, device=hcfg.device)
+    # --- align for plotting (add this) ---
+    # 解析結果から境界を取得（なければ 0.8L）
+    L = res["V"].shape[1]
+    idx_train = int(res.get("idx_train", int(0.8 * L)))
 
-    # --- 既存 ---
-    A_d, B_d = res["A"], res["B"]  # 離散時間の A_d, B_d
+    t_test = res["t_test"]
+    yout = res["yout"]  # (T_pred, r_c)
+    u_test = res["u_test"]  # (num_chaos, T_pred?)
 
-    # --- 追加：離散→連続 ---
-    A_c, B_c = discrete_to_continuous(A_d, B_d, args.dt)
+    # 長さを最小に合わせる
+    Lmin = min(yout.shape[0], u_test.shape[1], t_test.shape[0])
+    yout = yout[:Lmin, :]
+    u_test = u_test[:, :Lmin]
+    t_test = t_test[:Lmin]
+
+    # ★ V_test は「更新後の状態」に合わせて +1 から開始
+    V_full = res["V"]
+    V_test = V_full[:, idx_train + 1 : idx_train + 1 + Lmin]
+
+    # デバッグ出力（任意）
+    print(
+        "aligned:",
+        "t_test",
+        t_test.shape,
+        "yout",
+        yout.shape,
+        "u_test",
+        u_test.shape,
+        "V_test",
+        V_test.shape,
+    )
+    # --- end align ---
+
+    # 係数の扱いを time_model で分岐
+    if args.time_model == "discrete":
+        A_d, B_d = res["A"], res["B"]
+        # 離散→連続（可視化・検証用）
+        A_c, B_c = discrete_to_continuous(A_d, B_d, args.dt)
+    else:
+        # 連続推定の結果
+        A_c, B_c = res["A"], res["B"]
+        # 連続→離散（検証・一部関数の互換用）
+        n, m = A_c.shape[0], B_c.shape[1]
+        Phi_c = np.block([[A_c, B_c], [np.zeros((m, n)), np.zeros((m, m))]])
+        Phi_d = expm(args.dt * Phi_c)
+        A_d, B_d = Phi_d[:n, :n], Phi_d[:n, n:]
 
     # 保存
     np.save(os.path.join(out_dir, "A_cont.npy"), A_c)
@@ -495,28 +557,32 @@ def main():
     _plot_AB_zero_center(A_c, B_c, os.path.join(out_dir, "AB_params_cont.png"))
 
     # --- 連続→離散の往復誤差で検証（合っているほど小さい） ---
-    n, m = A_d.shape[0], B_d.shape[1]
-    Phi_c = np.block([[A_c, B_c], [np.zeros((m, n)), np.zeros((m, m))]])
-    Phi_d_hat = expm(args.dt * Phi_c)
-    A_d_hat = Phi_d_hat[:n, :n]
-    B_d_hat = Phi_d_hat[:n, n:]
+    n, m = A_c.shape[0], B_c.shape[1]
+    if args.time_model == "discrete":
+        # d -> c -> d
+        Phi_c = np.block([[A_c, B_c], [np.zeros((m, n)), np.zeros((m, m))]])
+        Phi_d_hat = expm(args.dt * Phi_c)
+        A_d_hat, B_d_hat = Phi_d_hat[:n, :n], Phi_d_hat[:n, n:]
+        errA = np.linalg.norm(A_d - A_d_hat, "fro") / (
+            np.linalg.norm(A_d, "fro") + 1e-12
+        )
+        errB = np.linalg.norm(B_d - B_d_hat, "fro") / (
+            np.linalg.norm(B_d, "fro") + 1e-12
+        )
+    else:
+        # c -> d -> c
+        Phi_d = np.block([[A_d, B_d], [np.zeros((m, n)), np.eye(m)]])
+        from havok.post_latent import discrete_to_continuous
 
-    errA = np.linalg.norm(A_d - A_d_hat, ord="fro") / (
-        np.linalg.norm(A_d, ord="fro") + 1e-12
-    )
-    errB = np.linalg.norm(B_d - B_d_hat, ord="fro") / (
-        np.linalg.norm(B_d, ord="fro") + 1e-12
-    )
+        A_c_hat, B_c_hat = discrete_to_continuous(A_d, B_d, args.dt)
+        errA = np.linalg.norm(A_c - A_c_hat, "fro") / (
+            np.linalg.norm(A_c, "fro") + 1e-12
+        )
+        errB = np.linalg.norm(B_c - B_c_hat, "fro") / (
+            np.linalg.norm(B_c, "fro") + 1e-12
+        )
     print(
         f"[check] discrete->continuous->discrete errors:  A: {errA:.2e},  B: {errB:.2e}"
-    )
-
-    # --- 反対称性の指標（A_c の対称成分の大きさ） ---
-    S = 0.5 * (A_c + A_c.T)  # symmetric
-    K = 0.5 * (A_c - A_c.T)  # skew-symmetric
-    ratio = np.linalg.norm(S, "fro") / (np.linalg.norm(K, "fro") + 1e-12)
-    print(
-        f"[skewness] ||Sym(Ac)||_F / ||Skew(Ac)||_F = {ratio:.3e}  (小さいほど“ほぼ反対称”)"
     )
 
     # -----------------------------
@@ -553,7 +619,7 @@ def main():
     # analyzer では train: 0〜0.8L, test: 0.8L〜 で lsim を実施
     V_full = res["V"]
     L = V_full.shape[1]
-    idx_train = int(0.8 * L)
+    idx_train = int(res.get("idx_train", int(0.8 * L)))
 
     # t_test, yout, u_test は analyzer が返している
     t_test = res["t_test"]
@@ -562,8 +628,14 @@ def main():
     r = res["r"]  # truncated rank
 
     # V_test を yout/u_test と長さを合わせて切り出し
+    # T_test = yout.shape[0]
+    # V_test = V_full[:, idx_train + 1 : idx_train + T_test]
+
     T_test = yout.shape[0]
-    V_test = V_full[:, idx_train : idx_train + T_test]
+    if args.time_model == "discrete":
+        V_test = V_full[:, idx_train + 1 : idx_train + 1 + T_test]
+    else:
+        V_test = V_full[:, idx_train : idx_train + T_test]
 
     # 閾値（±95%タイル）
     thr = compute_forcing_threshold(u_test, percentile=95)
